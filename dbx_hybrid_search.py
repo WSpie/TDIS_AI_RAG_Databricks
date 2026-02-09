@@ -35,6 +35,7 @@ def hybrid_search_rrf(
     index_fqn: str = DEFAULT_INDEX_FQN,
     chunks_table: str = DEFAULT_CHUNKS_TABLE,
     clean_text: bool = False,
+    print_status: bool = False
 ) -> DataFrame:
     """
     Hybrid retrieval = Vector top-k + BM25 top-k, fused by Reciprocal Rank Fusion (RRF).
@@ -64,7 +65,8 @@ def hybrid_search_rrf(
         .limit(int(top_each))
     )
     vec_rank = [r["chunk_id"] for r in vec_df.select("chunk_id").collect()]
-    print('Vector retrieval done.')
+    if print_status:
+        print('Vector retrieval done.')
 
     # BM25 retrieval
     kw_df = (
@@ -74,7 +76,8 @@ def hybrid_search_rrf(
         .limit(int(top_each))
     )
     kw_rank = [r["chunk_id"] for r in kw_df.select("chunk_id").collect()]
-    print('Keywords retrieval done.')
+    if print_status:
+        print('Keywords retrieval done.')
 
     # RRF fuse + dedup
     scores: Dict[str, float] = {}
@@ -104,5 +107,6 @@ def hybrid_search_rrf(
     if clean_text:
         joined = joined.withColumn("text_clean", _clean_text_col(F.col("text")))
 
-    print('RRF done.')
+    if print_status:
+        print('RRF done.')
     return joined
