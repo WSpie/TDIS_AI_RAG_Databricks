@@ -50,7 +50,6 @@ def build_messages(text_collection: str, user_query: str) -> List[Dict[str, str]
     {user_query}
 
     RESPONSE FORMAT:
-    - User Query: {user_query}
     - Answers:
     - Data sources:
     """
@@ -95,5 +94,9 @@ def dbx_llm_chat(
         params["temperature"] = temperature
 
     resp = client.chat.completions.create(**params)
-    return resp.choices[0].message.content
+    ans = resp.choices[0].message.content
+
+    if "gpt" in model_name.lower():
+        ans = ans[-1]["text"]
+    return ans
 
