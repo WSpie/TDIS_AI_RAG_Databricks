@@ -36,23 +36,26 @@ def ask_gpt(
     return (response.choices[0].message.content or "").strip()
 
 def build_messages(text_collection: str, user_query: str) -> List[Dict[str, str]]:
-    system_prompt = """You are a disaster risk domain expert.
-    You MUST answer using ONLY the provided CONTEXT (retrieved snippets).
-    Do NOT use outside knowledge. Do NOT guess. Do NOT fabricate citations.
-    If the CONTEXT does not contain enough information, reply exactly: OUT_OF_KNOWLEDGE
-    When you answer, be concise and factual.
-    """
+    # Enforce plain-text, single-paragraph sections, strict OOK behavior
+    system_prompt = (
+        "You are a disaster risk domain expert.\n"
+        "You MUST answer using ONLY the provided CONTEXT.\n"
+        "Do NOT use outside knowledge. Do NOT guess. Do NOT fabricate.\n"
+        "If the CONTEXT does not contain enough information, reply exactly:\n"
+        "OUT_OF_KNOWLEDGE\n"
+        "Output must be plain text only (no markdown, no bullets, no numbering, no extra symbols).\n"
+        "If you can answer, output exactly two lines:\n"
+        "Answers: <ONE paragraph only, no line breaks>\n"
+        "Data sources: <ONE paragraph only, no line breaks>\n"
+        "If OUT_OF_KNOWLEDGE, output ONLY that single line and nothing else.\n"
+    )
 
-    user_prompt = f"""CONTEXT:
-    {text_collection}
-
-    QUESTION:
-    {user_query}
-
-    RESPONSE FORMAT:
-    - Answers:
-    - Data sources:
-    """
+    user_prompt = (
+        "CONTEXT:\n"
+        f"{text_collection}\n\n"
+        "QUESTION:\n"
+        f"{user_query}\n"
+    )
 
     return [
         {"role": "system", "content": system_prompt},
@@ -73,6 +76,40 @@ def dbx_llm_chat(
     config_path: str = "config.yaml",
     base_url: str = "https://adb-3300405005568038.18.azuredatabricks.net/serving-endpoints",
 ) -> str:
+    # Disable MLflow OpenAI autologging to avoid pydantic errors on non-standard content parts
+    try:
+        import mlflow
+        try:
+            import mlflow.openai
+            mlflow.openai.autolog(disable=True)
+        except Exception:
+            pass
+        try:
+            mlflow.autolog(disable=True)
+        except Exception:
+            pass
+    except Exception:
+        pass
+
+    # Normalize OpenAI-style content (str | list[parts]) to plain text
+    # Keep only parts with type == "text"; drop unknown types like "reasoning"
+    def _content_to_text(content):
+        if content is None:
+            return ""
+        if isinstance(content, str):
+            return content
+        if isinstance(content, list):
+            out = []
+            for p in content:
+                if not isinstance(p, dict):
+                    continue
+                if p.get("type") == "text":
+                    t = p.get("text")
+                    if isinstance(t, str):
+                        out.append(t)
+            return "".join(out)
+        return str(content)
+
     # Read token from config.yaml
     cfg = load_config(config_path)
     token = cfg["DATABRICKS_TOKEN"]
@@ -83,10 +120,14 @@ def dbx_llm_chat(
     # Accept both dict {system,user} and list[{role,content},...]
     chat_msgs = messages if isinstance(messages, list) else []
     if not chat_msgs:
-        if messages.get("system"):
+        if messages.get("system") is not None:
             chat_msgs.append({"role": "system", "content": messages["system"]})
-        if messages.get("user"):
+        if messages.get("user") is not None:
             chat_msgs.append({"role": "user", "content": messages["user"]})
+
+    # Normalize all input message contents to plain strings
+    for m in chat_msgs:
+        m["content"] = _content_to_text(m.get("content"))
 
     # Build params; only pass temperature if provided
     params = dict(model=model_name, messages=chat_msgs, max_tokens=max_tokens)
@@ -94,9 +135,10 @@ def dbx_llm_chat(
         params["temperature"] = temperature
 
     resp = client.chat.completions.create(**params)
-    ans = resp.choices[0].message.content
 
-    if "gpt" in model_name.lower():
-        ans = ans[-1]["text"]
-    return ans
+    # Normalize output content to plain string
+    return _content_to_text(resp.choices[0].message.content)
+
+
+
 
