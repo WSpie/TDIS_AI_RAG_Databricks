@@ -17,8 +17,8 @@ from LLMs_call import load_api_key, ask_gpt, build_messages, dbx_llm_chat
 def rag_pipe_main(
     spark: SparkSession,
     query: str,
-    llm_model: str,
-    use_dbx_model: bool = True,
+    llm_model: str = "gpt-4o-mini",
+    use_dbx_model: bool = False,
     temperature: Optional[float] = None,
     top_each: int = 100,
     top_n: int = 20,
@@ -27,6 +27,9 @@ def rag_pipe_main(
     config_path: str = settings.CONFIG_PATH,
 ) -> Tuple[DataFrame, str]:
     """Run the full RAG pipeline and return (reranked_df, answer).
+
+    Defaults to OpenAI gpt-4o-mini (key read from config.yaml). Set use_dbx_model=True
+    with a Databricks endpoint name in llm_model to use a Databricks-served model instead.
 
     Stages:
       1) hybrid_search_rrf: vector + BM25 retrieval fused by RRF (returns top_n with text),
