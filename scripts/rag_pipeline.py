@@ -8,6 +8,7 @@ import openai
 from pyspark.sql import DataFrame, SparkSession
 from pyspark.sql import functions as F
 
+import settings
 from dbx_hybrid_search import hybrid_search_rrf
 from dbx_rerank import rerank_dataframe
 from LLMs_call import load_api_key, ask_gpt, build_messages, dbx_llm_chat
@@ -23,7 +24,7 @@ def rag_pipe_main(
     top_n: int = 20,
     rerank_top_k: int = 10,
     rrf_k: int = 20,
-    config_path: str = "config.yaml",
+    config_path: str = settings.CONFIG_PATH,
 ) -> Tuple[DataFrame, str]:
     """Run the full RAG pipeline and return (reranked_df, answer).
 

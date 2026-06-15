@@ -9,14 +9,16 @@ from pyspark.sql import DataFrame, SparkSession
 from pyspark.sql import functions as F
 from pyspark.sql.window import Window
 
+import settings
+
 # -----------------------------
 # Tables (optimized_ only)
 # -----------------------------
-CHUNKS = "tdis_dev_data_catalog.tdir.optimized_rag_chunks"
-POST   = "tdis_dev_data_catalog.tdir.optimized_kw_postings"
-DFT    = "tdis_dev_data_catalog.tdir.optimized_kw_df"
-DST    = "tdis_dev_data_catalog.tdir.optimized_kw_doc_stats"
-META   = "tdis_dev_data_catalog.tdir.optimized_kw_meta"
+CHUNKS = settings.RAG_CHUNKS_TABLE
+POST   = settings.KW_POSTINGS_TABLE
+DFT    = settings.KW_DF_TABLE
+DST    = settings.KW_DOC_STATS_TABLE
+META   = settings.KW_META_TABLE
 
 # -----------------------------
 # BM25 parameters

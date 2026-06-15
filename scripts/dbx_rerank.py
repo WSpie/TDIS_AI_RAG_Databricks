@@ -16,9 +16,11 @@ from transformers import AutoTokenizer, AutoModelForSequenceClassification
 from pyspark.sql import DataFrame, SparkSession
 from pyspark.sql import functions as F
 
+import settings
+
 # Local model path in UC Volume (download via huggingface_hub.snapshot_download)
 # HF id: cross-encoder/ms-marco-MiniLM-L-6-v2
-RERANKER_DIR = "/Volumes/tdis_dev_data_catalog/tdir/tdir/models/ms-marco-MiniLM-L-6-v2"
+RERANKER_DIR = settings.RERANKER_MODEL_DIR
 
 # Lazy-loaded globals (cache across calls in one session)
 _tokenizer = None

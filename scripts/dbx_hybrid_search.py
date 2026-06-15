@@ -6,12 +6,13 @@ from typing import Dict, Set, Optional
 from pyspark.sql import DataFrame, SparkSession
 from pyspark.sql import functions as F
 
+import settings
 from dbx_vector_search import vector_topk
 from dbx_keyword_search_bm25 import keyword_search
 
 
-DEFAULT_INDEX_FQN = "tdis_dev_data_catalog.tdir.optimized_rag_chunks_vs"
-DEFAULT_CHUNKS_TABLE = "tdis_dev_data_catalog.tdir.optimized_rag_chunks"
+DEFAULT_INDEX_FQN = settings.VS_INDEX_FQN
+DEFAULT_CHUNKS_TABLE = settings.RAG_CHUNKS_TABLE
 
 
 def _clean_text_col(col):
