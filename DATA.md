@@ -34,8 +34,10 @@ abfss://tdis-data-bronze@tdisproddatalakehouse.dfs.core.windows.net/RAG_files/
                                         ├ optimized_kw_doc_stats   每 chunk 文档长度
                                         └ optimized_kw_meta        N, avgdl
        └──────┬───────────────────────────┘
-              ▼  dbx_hybrid_search.py  (RRF 融合, rrf_k=20/60)
-        top-10 chunks（拼接为 CONTEXT）
+              ▼  dbx_hybrid_search.py  (RRF 融合, rrf_k=20)
+        top_n（默认 20）候选
+              ▼  dbx_rerank.py  (cross-encoder rerank)
+        top_k（默认 10）chunks（拼接为 CONTEXT）
               ▼  LLMs_call.py  (build_messages → 生成)
    ┌──────────┴──────────┐
    ▼                     ▼
@@ -48,12 +50,34 @@ abfss://tdis-data-bronze@tdisproddatalakehouse.dfs.core.windows.net/RAG_files/
 
 ---
 
+## 1b. 仓库结构（重构后）
+
+```
+.
+├── query_nbk.ipynb     # 查询流程：retrieve → RRF → rerank → LLM →（可选）批量评测
+├── setup_nbk.ipynb     # 一次性构建：下载模型 → 预处理 → 向量索引 → BM25 建表
+├── scripts/            # 可复用 .py 模块
+│   ├── dbx_vector_search.py        # 向量检索
+│   ├── dbx_keyword_search_bm25.py  # BM25 关键词检索
+│   ├── dbx_hybrid_search.py        # RRF 融合
+│   ├── dbx_rerank.py               # cross-encoder rerank（新增）
+│   ├── LLMs_call.py                # LLM 调用（OpenAI / Databricks）
+│   └── rag_pipeline.py             # 端到端编排 rag_pipe_main（新增）
+├── archives/           # 旧 notebook + 冗余脚本（dbx_retrieve.py 已被 dbx_vector_search.py 取代）
+└── DATA.md
+```
+
+> 全程只使用 `optimized_*` 家族数据；旧索引 `rag_chunks_vs` 等不再被引用（仅存于 archives/）。
+
+---
+
 ## 2. 数据资产清单与归属
 
 | # | 资产 | 位置 / FQN | 归属层 | 产生方 / 拥有方 | 可重建 |
 |---|------|-----------|--------|----------------|:-----:|
 | 1 | 原始 chunks + embeddings | `abfss://tdis-data-bronze@tdisproddatalakehouse.dfs.core.windows.net/RAG_files/` | **PROD 数据湖 (bronze)** | 上游 TDIS 生产管线，本项目**只读** | — (源) |
 | 2 | 嵌入模型 DMRetriever-33M | UC Volume `/Volumes/tdis_dev_data_catalog/tdir/tdir/models/DMRetriever-33M` | DEV（外部下载） | HuggingFace `DMIR01/DMRetriever-33M`，第三方 | ✅ 重新下载 |
+| 2b | Rerank 模型（cross-encoder） | UC Volume `/Volumes/tdis_dev_data_catalog/tdir/tdir/models/ms-marco-MiniLM-L-6-v2` | DEV（外部下载） | HuggingFace `cross-encoder/ms-marco-MiniLM-L-6-v2`，第三方 | ✅ 重新下载 |
 | 3a | 文本表 | `tdis_dev_data_catalog.tdir.optimized_chunks_text` | DEV Catalog | `0_preprocess` 派生 | ✅ |
 | 3b | 向量表 | `tdis_dev_data_catalog.tdir.optimized_embeddings_dmretriever33m` | DEV Catalog | `0_preprocess` 派生 | ✅ |
 | 3c | **核心宽表** | `tdis_dev_data_catalog.tdir.optimized_rag_chunks` | DEV Catalog | `0_preprocess` 派生（3a ⋈ 3b） | ✅ |
@@ -71,36 +95,32 @@ abfss://tdis-data-bronze@tdisproddatalakehouse.dfs.core.windows.net/RAG_files/
 
 ## 3. 硬编码引用位置（迁移时必须修改的清单）
 
-迁移涉及的标识符当前**散落在 11 个文件、约 38 处**，没有集中配置。下表给出每个标识符出现的文件，供迁移时全量替换。
+重构后，运行时引用集中在 `scripts/` + 两个 notebook（旧引用全部归档到 `archives/`，不再生效）。下表给出活跃代码中每个标识符的位置，供迁移时全量替换。
 
 ### 3.1 Catalog / Schema 前缀 `tdis_dev_data_catalog.tdir`
 
 | 文件 | 说明 |
 |------|------|
-| `0_preprocess.ipynb` | 写入 3a/3b/3c，校验 count |
-| `1_vector_search.ipynb` | 查询核心宽表、INDEX_FQN（含旧索引） |
-| `2_keyword_search_BM25.ipynb` | 构建 + 读取 5a–5d、核心宽表 |
-| `2_keyword_search_DB.ipynb` | 旧索引 `rag_chunks_vs` |
-| `3_hybrid_search.ipynb` | INDEX_FQN、CHUNKS_TABLE |
-| `6_RAG_test_eval.ipynb` | 写入 `qa_dict_eval` |
-| `dbx_keyword_search_bm25.py` | 模块顶部 `CHUNKS/POST/DFT/DST/META` 常量 |
-| `dbx_retrieve.py` | `MODEL_DIR`（Volume 路径含 catalog） |
-| `dbx_vector_search.py` | `MODEL_DIR` |
-| `dbx_hybrid_search.py` | `DEFAULT_INDEX_FQN`、`DEFAULT_CHUNKS_TABLE` |
+| `setup_nbk.ipynb` | 写入 3a/3b/3c、5a–5d；向量索引 FQN 说明 |
+| `query_nbk.ipynb` | 评测写入 `qa_dict_eval` |
+| `scripts/dbx_keyword_search_bm25.py` | 模块顶部 `CHUNKS/POST/DFT/DST/META` 常量 |
+| `scripts/dbx_vector_search.py` | `MODEL_DIR` |
+| `scripts/dbx_rerank.py` | `RERANKER_DIR` |
+| `scripts/dbx_hybrid_search.py` | `DEFAULT_INDEX_FQN`、`DEFAULT_CHUNKS_TABLE` |
 
 ### 3.2 PROD 源路径
 
-- `0_preprocess.ipynb` → `base = "abfss://tdis-data-bronze@tdisproddatalakehouse.dfs.core.windows.net/RAG_files/"`
+- `setup_nbk.ipynb` → `base = "abfss://tdis-data-bronze@tdisproddatalakehouse.dfs.core.windows.net/RAG_files/"`
 
 ### 3.3 模型 Volume 路径
 
-- `dbx_retrieve.py`、`dbx_vector_search.py`、`1_vector_search.ipynb`
-  → `/Volumes/tdis_dev_data_catalog/tdir/tdir/models/DMRetriever-33M`
+- `scripts/dbx_vector_search.py`、`setup_nbk.ipynb` → `/Volumes/.../models/DMRetriever-33M`
+- `scripts/dbx_rerank.py`、`setup_nbk.ipynb` → `/Volumes/.../models/ms-marco-MiniLM-L-6-v2`
 
 ### 3.4 LLM 端点 / 凭据
 
-- `LLMs_call.py` → `base_url="https://adb-3300405005568038.18.azuredatabricks.net/serving-endpoints"`，`DATABRICKS_TOKEN`（读自 `config.yaml`）
-- `LLMs_call.py`、`4_query_my_LLMs (backups).ipynb`、`5_RAG_pipeline_demo`、`6_RAG_test_eval` → `gpt_api_key`（读自 `config.yaml`）
+- `scripts/LLMs_call.py` → `base_url="https://adb-3300405005568038.18.azuredatabricks.net/serving-endpoints"`，`DATABRICKS_TOKEN`（读自 `config.yaml`）
+- `scripts/LLMs_call.py`、`scripts/rag_pipeline.py`、`query_nbk.ipynb` → `gpt_api_key`（读自 `config.yaml`）
 
 ---
 
@@ -108,17 +128,17 @@ abfss://tdis-data-bronze@tdisproddatalakehouse.dfs.core.windows.net/RAG_files/
 
 | 资产 | 状态 | 建议 |
 |------|------|------|
-| `tdis_dev_data_catalog.tdir.rag_chunks_vs`（旧向量索引，无 `optimized_` 前缀） | 出现在 `1_vector_search.ipynb` 早期 cell、`2_keyword_search_DB.ipynb`；现行代码默认用 `optimized_rag_chunks_vs` | 迁移前确认无人依赖后删除 |
-| 根目录归档脚本（`dbx_*.py` 之外的旧 notebook） | 早期版本，已被 `optimized_*` 流程取代 | 迁移时归并到 `archives/` 或删除 |
+| `tdis_dev_data_catalog.tdir.rag_chunks_vs`（旧向量索引，无 `optimized_` 前缀） | 活跃代码已不再引用，仅遗留在 `archives/` 的旧 notebook 中 | 迁移前确认无人依赖后删除该索引 |
+| `archives/`（旧 notebook + `dbx_retrieve.py`） | 已被 `query_nbk` / `setup_nbk` / `scripts/` 取代 | 仅作历史参考，可在确认后清理 |
 
 ---
 
 ## 5. 迁移注意事项（Migration Checklist）
 
-1. **集中配置**：当前 catalog/schema/路径/端点全为硬编码（§3）。迁移前建议抽到统一配置（如 `config.yaml` 或一个 `settings.py`/常量模块），把 38 处引用收敛到一处，避免漏改。
+1. **集中配置**：catalog/schema/路径/端点仍为硬编码（§3，已收敛到 `scripts/` + 两个 notebook）。迁移前建议进一步抽到统一配置（如 `config.yaml` 或 `scripts/settings.py` 常量模块），把引用收敛到一处，避免漏改。
 2. **跨环境边界**：唯一跨 prod/dev 依赖是「读 PROD bronze 湖 → 写 DEV catalog」。迁移目标 catalog 需保证对 `tdis-data-bronze` 容器有读权限。
-3. **派生资产无需搬运**：#3–#6 不必跨环境拷贝，迁移后在目标环境**重跑** `0_preprocess` → `2_keyword_search_BM25` →（建索引）即可重建。真正要保留/迁移的只有源数据访问权与代码。
-4. **模型一致性**：query 端与文档端必须用**同一** DMRetriever-33M（384 维）。Volume 路径含 catalog 名（`/Volumes/tdis_dev_data_catalog/...`），迁移 catalog 时此路径同步变更，且需重新 `snapshot_download`。
+3. **派生资产无需搬运**：#3–#6 不必跨环境拷贝，迁移后在目标环境**重跑 `setup_nbk`**（预处理 → 建索引 → BM25 建表）即可重建。真正要保留/迁移的只有源数据访问权与代码。
+4. **模型一致性**：query 端与文档端必须用**同一** DMRetriever-33M（384 维）。Volume 路径含 catalog 名（`/Volumes/tdis_dev_data_catalog/...`），迁移 catalog 时此路径同步变更，且需重新 `snapshot_download`（嵌入模型 + reranker 各一个）。
 5. **重建顺序依赖**：
    `0_preprocess`（建 #3）→ Vector Search 建 #4 → `2_keyword_search_BM25`（建 #5）→ `3_hybrid_search` 可用 →（可选）`6_RAG_test_eval`（建 #6）。
 6. **凭据**：`config.yaml`（含 `gpt_api_key`、`DATABRICKS_TOKEN`）已被 `.gitignore` 排除，不入库；迁移目标环境需单独配置。
