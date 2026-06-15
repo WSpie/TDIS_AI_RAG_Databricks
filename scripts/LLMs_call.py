@@ -3,6 +3,8 @@ import openai
 from openai import OpenAI
 from typing import Dict, Tuple, List, Any
 
+import settings
+
 def load_api_key(key: str = "gpt_api_key", config_path: str = "config.yaml") -> str:
     with open(config_path, "r", encoding="utf-8") as f:
         cfg = yaml.safe_load(f)
@@ -70,8 +72,8 @@ def dbx_llm_chat(
     model_name: str,
     temperature=None,
     max_tokens: int = 5000,
-    config_path: str = "config.yaml",
-    base_url: str = "https://adb-3300405005568038.18.azuredatabricks.net/serving-endpoints",
+    config_path: str = settings.CONFIG_PATH,
+    base_url: str = settings.DBX_BASE_URL,
 ) -> str:
     # Read token from config.yaml
     cfg = load_config(config_path)

@@ -8,8 +8,10 @@ import torch
 import torch.nn.functional as F
 from transformers import AutoTokenizer, AutoModel
 
+import settings
+
 # Local model path in UC Volume (DMIR01/DMRetriever-33M snapshot)
-MODEL_DIR = "/Volumes/tdis_dev_data_catalog/tdir/tdir/models/DMRetriever-33M"
+MODEL_DIR = settings.EMBED_MODEL_DIR
 
 _tokenizer = None
 _model = None
