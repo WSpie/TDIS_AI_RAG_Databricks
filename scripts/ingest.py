@@ -104,7 +104,13 @@ def ingest(
     report = {"chunks_text": n_chunks, "embeddings": n_emb, "rag_chunks": n_rag}
 
     if sync_index:
-        report["index_sync"] = 1 if sync_vector_index(wait=wait_for_sync) else 0
+        if settings.VS_ENDPOINT:
+            sync_vector_index(wait=wait_for_sync)
+            report["index_sync"] = "triggered"
+        else:
+            # No endpoint configured. A Continuous Delta Sync index picks up the new rows
+            # automatically; only a Triggered index needs an explicit sync (set VS_ENDPOINT).
+            report["index_sync"] = "skipped (VS_ENDPOINT not set)"
 
     return report
 
