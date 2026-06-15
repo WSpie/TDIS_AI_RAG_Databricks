@@ -79,18 +79,22 @@ def ingest(
     emb_df: DataFrame,
     sync_index: bool = True,
     wait_for_sync: bool = False,
+    rebuild_keyword_index: bool = True,
 ) -> Dict[str, int]:
-    """Upsert new chunks + embeddings into the optimized_* family and optionally sync the index.
+    """Upsert new chunks + embeddings into the optimized_* family, refresh BM25, and sync the index.
 
     Updates three tables, keyed on chunk_id:
       - optimized_chunks_text                (chunk_id, source_file, chunk_index_in_file, text)
       - optimized_embeddings_dmretriever33m  (chunk_id, embedding)
       - optimized_rag_chunks                 (inner join of the two — the VS source table)
 
-    NOTE: the BM25 tables (optimized_kw_*) are NOT updated here; rebuild them with
-    rebuild_bm25() when keyword recall needs to reflect the new chunks.
+    Both retrieval paths must see the new chunks for hybrid search to be complete:
+      - vector side: the Vector Search index (synced when sync_index=True),
+      - keyword side: the BM25 tables (rebuilt when rebuild_keyword_index=True).
+    Skipping the BM25 rebuild leaves new chunks invisible to keyword recall, so it defaults to True.
+    For many small batches, set both flags False and run rebuild_bm25() + sync once at the end.
 
-    Returns a small report dict with row counts.
+    Returns a small report dict.
     """
     chunks_df = chunks_df.select("chunk_id", "source_file", "chunk_index_in_file", "text")
     emb_df = emb_df.select("chunk_id", "embedding")
@@ -103,6 +107,11 @@ def ingest(
 
     report = {"chunks_text": n_chunks, "embeddings": n_emb, "rag_chunks": n_rag}
 
+    # Keyword side: rebuild BM25 so new chunks are reachable via keyword recall too
+    if rebuild_keyword_index:
+        report["bm25"] = rebuild_bm25(spark)
+
+    # Vector side: refresh the Vector Search index
     if sync_index:
         if settings.VS_ENDPOINT:
             sync_vector_index(wait=wait_for_sync)

@@ -92,8 +92,13 @@ abfss://tdis-data-bronze@tdisproddatalakehouse.dfs.core.windows.net/RAG_files/
 ### 增量注入（ingest.py / ingest_nbk）
 
 HPC 处理好的新 `chunks + embeddings` → `ingest.load_new()` 读取 → `ingest.ingest()` 按 `chunk_id`
-幂等 MERGE 进 `optimized_chunks_text / optimized_embeddings_dmretriever33m / optimized_rag_chunks`
-→ `sync_vector_index()` 触发 Delta Sync 索引更新。关键词召回需同步时再调 `rebuild_bm25()`。
+幂等 MERGE 进 `optimized_chunks_text / optimized_embeddings_dmretriever33m / optimized_rag_chunks`。
+混合检索两路都要看到新数据，所以 `ingest()` 默认**同时**刷新两侧：
+- **关键词侧**：`rebuild_keyword_index=True` 重建 BM25 倒排表（必做，否则新 chunks 在关键词召回中检索不到）；
+- **向量侧**：`sync_index=True` 触发 Vector Search 索引同步。
+
+索引 `optimized_rag_chunks_vs` 是 **Triggered** Delta Sync（endpoint `tdis-ai-rag-light`），不会自动更新，
+因此同步是必需的。多次小批量注入时可两个开关都设 `False`，最后统一 `rebuild_bm25()` + `sync_vector_index()` 一次。
 
 ---
 
