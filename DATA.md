@@ -94,11 +94,14 @@ abfss://tdis-data-bronze@tdisproddatalakehouse.dfs.core.windows.net/RAG_files/
 HPC 处理好的新 `chunks + embeddings` → `ingest.load_new()` 读取 → `ingest.ingest()` 按 `chunk_id`
 幂等 MERGE 进 `optimized_chunks_text / optimized_embeddings_dmretriever33m / optimized_rag_chunks`。
 混合检索两路都要看到新数据，所以 `ingest()` 默认**同时**刷新两侧：
-- **关键词侧**：`rebuild_keyword_index=True` 重建 BM25 倒排表（必做，否则新 chunks 在关键词召回中检索不到）；
+- **关键词侧**：`update_keyword_index=True` **增量更新** BM25（`update_bm25()`，只对本批 chunk 重新分词，
+  在 `optimized_kw_postings/doc_stats/df/meta` 上原地打补丁；正确处理重新注入的 chunk_id，幂等）。必做，
+  否则新 chunks 在关键词召回中检索不到；
 - **向量侧**：`sync_index=True` 触发 Vector Search 索引同步。
 
 索引 `optimized_rag_chunks_vs` 是 **Triggered** Delta Sync（endpoint `tdis-ai-rag-light`），不会自动更新，
-因此同步是必需的。多次小批量注入时可两个开关都设 `False`，最后统一 `rebuild_bm25()` + `sync_vector_index()` 一次。
+因此同步是必需的。`rebuild_bm25()` 仍保留为全量重建（初次构建 / 修复用）。多次小批量注入时，BM25 保持逐批增量，
+向量索引同步可设 `sync_index=False`、最后统一 `sync_vector_index()` 一次（Triggered 同步会全表扫描）。
 
 ---
 
