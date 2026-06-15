@@ -50,7 +50,8 @@ QA_EVAL_TABLE = table("qa_dict_eval")
 # Vector Search
 # -----------------------------------------------------------------------------
 VS_INDEX_FQN   = table("optimized_rag_chunks_vs")
-VS_ENDPOINT    = os.environ.get("TDIS_VS_ENDPOINT", "")   # set per environment
+# Delta Sync index with a TRIGGERED schedule -> new rows require an explicit index.sync().
+VS_ENDPOINT    = os.environ.get("TDIS_VS_ENDPOINT", "tdis-ai-rag-light")
 VS_PRIMARY_KEY = "chunk_id"
 VS_EMBED_COL   = "embedding"
 EMBED_DIM      = int(os.environ.get("TDIS_EMBED_DIM", "384"))
